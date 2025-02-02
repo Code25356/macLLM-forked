@@ -65,14 +65,65 @@ class AppDelegate(NSObject):
     def menu(self):
         menu = NSMenu.alloc().init()
         menu.addItem_(NSMenuItem.separatorItem())
-        options_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_("Options", "options:", "")
+        
+        # Create Options submenu
+        options_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_("Options", None, "")
+        options_menu = NSMenu.alloc().init()
+        options_item.setSubmenu_(options_menu)
+        
+        # Add Provider submenu under Options
+        provider_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_("Provider", None, "")
+        provider_menu = NSMenu.alloc().init()
+        provider_item.setSubmenu_(provider_menu)
+        
+        # Add OpenAI and Ollama options
+        openai_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_("OpenAI", "setProviderOpenAI:", "")
+        ollama_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_("Ollama", "setProviderOllama:", "")
+        
+        # Set initial state based on current provider
+        if self.macllm_ui.macllm.provider_type == "openai":
+            openai_item.setState_(1)  # 1 means checked
+        else:
+            ollama_item.setState_(1)
+            
+        provider_menu.addItem_(openai_item)
+        provider_menu.addItem_(ollama_item)
+        options_menu.addItem_(provider_item)
+        
         menu.addItem_(options_item)
         quit_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_("Quit", "terminate:", "")
         menu.addItem_(quit_item)
         return menu
-
-    def options_(self, sender):
-        print("Options clicked!")
+        
+    def setProviderOpenAI_(self, sender):
+        self.macllm_ui.macllm.provider_type = "openai"
+        self.macllm_ui.macllm.llm = self.macllm_ui.macllm.llm.__class__(
+            model=self.macllm_ui.macllm.llm.model,
+            temperature=self.macllm_ui.macllm.llm.temperature,
+            provider_type="openai"
+        )
+        self.macllm_ui.status_ready = "🟢 LLM (OpenAI)"
+        self.macllm_ui.status_working = "🟠 LLM (OpenAI)"
+        self.status_item.setTitle_(self.macllm_ui.status_ready)
+        # Update menu state
+        provider_menu = sender.menu()
+        for item in provider_menu.itemArray():
+            item.setState_(1 if item.title() == "OpenAI" else 0)
+            
+    def setProviderOllama_(self, sender):
+        self.macllm_ui.macllm.provider_type = "ollama"
+        self.macllm_ui.macllm.llm = self.macllm_ui.macllm.llm.__class__(
+            model=self.macllm_ui.macllm.llm.model,
+            temperature=self.macllm_ui.macllm.llm.temperature,
+            provider_type="ollama"
+        )
+        self.macllm_ui.status_ready = "🟢 LLM (Ollama)"
+        self.macllm_ui.status_working = "🟠 LLM (Ollama)"
+        self.status_item.setTitle_(self.macllm_ui.status_ready)
+        # Update menu state
+        provider_menu = sender.menu()
+        for item in provider_menu.itemArray():
+            item.setState_(1 if item.title() == "Ollama" else 0)
 
     def applicationDidFinishLaunching_(self, notification):
         try:
@@ -180,8 +231,8 @@ class MacLLMUI:
     text_area_y   = padding + input_field_height + padding
 
     # Define colors for the status icon
-    status_ready   = "🟢 LLM"
-    status_working = "🟠 LLM"
+    status_ready   = "🟢 LLM (OpenAI)"  # Will be updated based on provider
+    status_working = "🟠 LLM (OpenAI)"  # Will be updated based on provider
 
     # Text messages and error messages
     text_prompt = "How can I help you?"
@@ -189,12 +240,25 @@ class MacLLMUI:
     def __init__(self):
         self.app = None
         self.delegate = None
-        self.macllm = None
+        self._macllm = None
         
         self.pb_change_count = 0
         self.clipboardCallback = self.dummy
 
         self.quick_window = None
+        
+    @property
+    def macllm(self):
+        return self._macllm
+        
+    @macllm.setter
+    def macllm(self, value):
+        self._macllm = value
+        if value is not None:
+            # Update status text based on provider
+            provider = value.provider_type
+            self.status_ready = f"🟢 LLM ({provider.title()})"
+            self.status_working = f"🟠 LLM ({provider.title()})"
 
     def dummy(self):
         return

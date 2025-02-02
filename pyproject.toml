@@ -8,8 +8,12 @@ dependencies = [
     "beautifulsoup4>=4.12.3",
     "certifi>=2024.12.14",
     "openai>=1.54.4",
-    "pyobjc>=10.3.1",
-    "quickmachotkey>=2023.11.17",
     "requests>=2.32.3",
     "toml>=0.10.2",
+    "httpx>=0.27.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
 ]

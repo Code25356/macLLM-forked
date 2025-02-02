@@ -6,12 +6,8 @@
 # or imported from the file apikey.py
 #
 
-import base64
-import requests
 import os
 import argparse
-
-import openai
 
 from shortcuts import ShortCut
 from ui import MacLLMUI
@@ -48,85 +44,31 @@ def handler():
     macLLM.ui.hotkey_pressed()
         
 class LLM:
-
-    client = None
-    model = "gpt-4o"
+    model = "gpt-4"
     temperature = 0.0
     context_limit = 10000
 
-    def __init__(self, model=model, temperature=0.0):
+    def __init__(self, model=model, temperature=0.0, provider_type="openai"):
         self.model = model
         self.temperature = temperature
-        self.openai_api_key = os.getenv("OPENAI_API_KEY")
-        if self.openai_api_key is None:
-            raise Exception("OPENAI_API_KEY not found in environment variables")
-        self.client = openai.OpenAI(api_key=self.openai_api_key)
+        
+        if provider_type == "openai":
+            from .llm_providers import OpenAIProvider
+            self.openai_api_key = os.getenv("OPENAI_API_KEY")
+            if self.openai_api_key is None:
+                raise Exception("OPENAI_API_KEY not found in environment variables")
+            self.provider = OpenAIProvider(self.openai_api_key, model=model, temperature=temperature)
+        elif provider_type == "ollama":
+            from .llm_providers import OllamaProvider
+            self.provider = OllamaProvider(model=model, temperature=temperature)
+        else:
+            raise ValueError(f"Unsupported provider type: {provider_type}")
 
     def generate(self, text):
-        c = self.client.chat.completions.create(
-          model=self.model,
-          messages = [
-            {"role": "user", "content": str(text)},
-          ],
-          temperature = self.temperature,
-        )
-        return c.choices[0].message.content
-    
-    # Function to encode the image
-    def encode_image(self,image_path):
-        with open(image_path, "rb") as image_file:
-            return base64.b64encode(image_file.read()).decode('utf-8')
+        return self.provider.generate(text)
 
     def generate_with_image(self, text, image_path):
-
-        # Getting the base64 string
-        base64_image = self.encode_image(image_path)
-        if base64_image is None:
-            print(f'Image encoding failed.')
-
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {self.openai_api_key}"
-        }
-
-        payload = {
-        "model": "gpt-4o",
-        "messages": [
-            {
-            "role": "user",
-            "content": [
-                {
-                "type": "text",
-                "text": f"{text}"
-                },
-                {
-                "type": "image_url",
-                "image_url": {
-                    "url": f"data:image/jpeg;base64,{base64_image}"
-                }
-                }
-            ]
-            }
-        ],
-        "max_tokens": 1000
-        }
-
-        response = requests.post("https://api.openai.com/v1/chat/completions", headers=headers, json=payload)
-
-        # Extract the content from the response
-        if response.status_code == 200:
-            response_data = response.json()
-            if 'choices' in response_data and len(response_data['choices']) > 0:
-                generated_text = response_data['choices'][0]['message']['content']
-                print(f'Generated Text: {generated_text}')
-                return generated_text
-            else:
-                print('No generated content found.')
-                return None
-        else:
-            print(f'Failed to generate content. Status Code: {response.status_code}')
-            print(response.json())
-            return None
+        return self.provider.generate_with_image(text, image_path)
 
 
 class MacLLM:
@@ -155,11 +97,12 @@ class MacLLM:
         os.system("screencapture -x -i -Jwindow /tmp/macllm.png")
         return "/tmp/macllm.png"
 
-    def __init__(self, model="gpt-4o", debug=False):
+    def __init__(self, model="gpt-4o", debug=False, provider_type="openai"):
         self.debug = debug
+        self.provider_type = provider_type
         self.ui = MacLLMUI()
         self.ui.macllm = self
-        self.llm = LLM(model=model)
+        self.llm = LLM(model=model, provider_type=provider_type)
         self.req = 0
 
         self.ui.clipboardCallback = self.clipboard_changed
@@ -253,13 +196,14 @@ def main():
     parser = argparse.ArgumentParser(description="macLLM - a simple LLM tool for the macOS clipboard")
     parser.add_argument("--model", type=str, default="gpt-4o", help="The LLM model to use")
     parser.add_argument("--debug", action="store_true", help="Enable debug mode")
+    parser.add_argument("--provider", type=str, choices=["openai", "ollama"], default="openai", help="The LLM provider to use")
     args = parser.parse_args()
 
     if args.debug:
         debug_str = color.RED + "Debug mode is enabled" + f" (v {MacLLM.version})" + color.END
         print(f"Welcome to macLLM. {debug_str}")
 
-    macLLM = MacLLM(model=args.model, debug=args.debug)
+    macLLM = MacLLM(model=args.model, debug=args.debug, provider_type=args.provider)
     ShortCut.init_shortcuts(macLLM)
     macLLM.show_instructions()
     macLLM.ui.start()
